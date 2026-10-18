@@ -6,11 +6,11 @@ The library owns metric definitions and Prometheus exposition. VictoriaMetrics i
 
 ## Status
 
-Initial canonical foundation. This repository establishes the contract, a small dependency-free metric registry, Prometheus text exposition, tests, and a scrape example. The HTTP server adapter and broader metric types are follow-up work.
+Core foundation with atomic counters, gauges, and fixed-memory histograms; Prometheus text exposition; tests; and a VictoriaMetrics scrape example. An HTTP server adapter remains the responsibility of the embedding application.
 
 ## Requirements
 
-- Zig 0.15.2 (pinned in CI).
+- Zig 0.16.0 (pinned in CI).
 - VictoriaMetrics single-node or cluster; see the official [VictoriaMetrics repository](https://github.com/VictoriaMetrics/VictoriaMetrics).
 
 ## Quick start
@@ -34,7 +34,7 @@ pub fn main() !void {
 }
 ```
 
-## Design contract
+## Histogram\n\n```zig\nconst latency = try registry.histogram("chappie_latency_ms", "Request latency in milliseconds");\nlatency.observe(12);\n```\n\nHistograms use 65 fixed atomic buckets with logarithmic upper bounds (1, 2, 4, …, 2^63, +Inf). Observation is O(1), performs no allocation, and does not search the registry. Bucket counts are cumulative only during export. This representation is intended for non-negative integer measurements; use milliseconds or microseconds as integer units.\n\n## Design contract
 
 - Metric names use Prometheus conventions; counters end in `_total`.
 - Use bounded, low-cardinality labels when label support is added. Never label by user ID, phone, session ID, prompt, raw intent, or other PII/high-cardinality values.
