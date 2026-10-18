@@ -214,9 +214,16 @@ fn appendHelpAndType(
     help: []const u8,
     kind: []const u8,
 ) !void {
-    try appendFmt(allocator, output, "# HELP {s} {s}\n# TYPE {s} {s}\n", .{ name, help, name, kind });
+    try appendFmt(allocator, output, "# HELP {s} ", .{name});
+    for (help) |ch| {
+        switch (ch) {
+            '\\' => try output.appendSlice(allocator, "\\\\"),
+            '\n' => try output.appendSlice(allocator, "\\n"),
+            else => try output.append(allocator, ch),
+        }
+    }
+    try appendFmt(allocator, output, "\n# TYPE {s} {s}\n", .{ name, kind });
 }
-
 fn appendFmt(
     allocator: std.mem.Allocator,
     output: *std.ArrayList(u8),
@@ -289,4 +296,21 @@ test "histogram name cannot collide with another metric kind" {
     defer registry.deinit();
     _ = try registry.counter("requests_total", "Requests");
     try std.testing.expectError(error.DuplicateMetric, registry.histogram("requests_total", "Collision"));
+}
+
+
+test "help text escapes backslashes and line breaks" {
+    var registry = Registry.init(std.testing.allocator);
+    defer registry.deinit();
+
+    _ = try registry.counter("safe_total", "line one\nline two \\ path");
+    const rendered = try registry.render();
+    defer std.testing.allocator.free(rendered);
+    try std.testing.expect(std.mem.indexOf(u8, rendered, "# HELP safe_total line one\\nline two \\\\ path\n") != null);
+}
+
+test "rejects empty metric names" {
+    var registry = Registry.init(std.testing.allocator);
+    defer registry.deinit();
+    try std.testing.expectError(error.InvalidMetricName, registry.counter("", "empty"));
 }
