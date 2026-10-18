@@ -68,7 +68,9 @@ pub const Registry = struct {
 
     pub fn deinit(self: *Registry) void {
         for (self.counters.items) |metric| { self.allocator.free(metric.name); self.allocator.free(metric.help); self.allocator.destroy(metric); }
-        for (self.gauges.items) |metric| { self.allocator.free(metric.name); self.allocator.f    /// Registers a compile-time-shaped counter. Label dimensions are fixed by
+        for (self.gauges.items) |metric| { self.allocator.free(metric.name); self.allocator.free(metric.help); self.allocator.destroy(metric); }
+
+    /// Registers a compile-time-shaped counter. Label dimensions are fixed by
     /// the type; updates use atomics and never perform registry lookups.
     pub fn labeledCounter(
         self: *Registry,
@@ -117,7 +119,6 @@ pub const Registry = struct {
         return false;
     }
 
-ree(metric.help); self.allocator.destroy(metric); }
         for (self.histograms.items) |metric| { self.allocator.free(metric.name); self.allocator.free(metric.help); self.allocator.destroy(metric); }
         self.counters.deinit(self.allocator);
         self.gauges.deinit(self.allocator);
