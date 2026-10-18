@@ -49,26 +49,84 @@ pub const Histogram = struct {
     pub fn getSum(self: *const Histogram) u64 { return self.sum.load(.monotonic); }
 };
 
+const LabeledCounterEntry = struct {
+    name: []const u8,
+    help: []const u8,
+    instance: *anyopaque,
+    render_fn: *const fn (std.mem.Allocator, *std.ArrayList(u8), []const u8, *anyopaque) anyerror!void,
+    destroy_fn: *const fn (std.mem.Allocator, *anyopaque) void,
+};
+
 pub const Registry = struct {
     allocator: std.mem.Allocator,
     counters: std.ArrayList(*Counter) = .empty,
     gauges: std.ArrayList(*Gauge) = .empty,
     histograms: std.ArrayList(*Histogram) = .empty,
+    labeled_counters: std.ArrayList(LabeledCounterEntry) = .empty,
 
     pub fn init(allocator: std.mem.Allocator) Registry { return .{ .allocator = allocator }; }
 
     pub fn deinit(self: *Registry) void {
         for (self.counters.items) |metric| { self.allocator.free(metric.name); self.allocator.free(metric.help); self.allocator.destroy(metric); }
-        for (self.gauges.items) |metric| { self.allocator.free(metric.name); self.allocator.free(metric.help); self.allocator.destroy(metric); }
+        for (self.gauges.items) |metric| { self.allocator.free(metric.name); self.allocator.f    /// Registers a compile-time-shaped counter. Label dimensions are fixed by
+    /// the type; updates use atomics and never perform registry lookups.
+    pub fn labeledCounter(
+        self: *Registry,
+        comptime names: anytype,
+        name: []const u8,
+        help: []const u8,
+        values: [names.len][]const u8,
+    ) !*labels.Counter(names) {
+        try validateName(name);
+        if (self.findCounter(name) != null or self.findGauge(name) != null or self.findHistogram(name) != null or self.findLabeledCounter(name)) return error.DuplicateMetric;
+
+        const Metric = labels.Counter(names);
+        const metric = try self.allocator.create(Metric);
+        errdefer self.allocator.destroy(metric);
+        metric.* = Metric.init(values);
+        for (values, 0..) |value, index| {
+            const owned = try self.allocator.dupe(u8, value);
+            metric.label_values[index] = owned;
+        }
+        errdefer for (metric.label_values) |value| self.allocator.free(value);
+
+        const owned_name = try self.allocator.dupe(u8, name);
+        errdefer self.allocator.free(owned_name);
+        const owned_help = try self.allocator.dupe(u8, help);
+        errdefer self.allocator.free(owned_help);
+        try self.labeled_counters.append(self.allocator, .{
+            .name = owned_name,
+            .help = owned_help,
+            .instance = metric,
+            .render_fn = renderLabeledCounter(Metric),
+            .destroy_fn = destroyLabeledCounter(Metric),
+        });
+        return metric;
+    }
+
+    fn findLabeledCounter(self: *const Registry, name: []const u8) bool {
+        for (self.labeled_counters.items) |entry| {
+            if (std.mem.eql(u8, entry.name, name)) return true;
+        }
+        return false;
+    }
+
+ree(metric.help); self.allocator.destroy(metric); }
         for (self.histograms.items) |metric| { self.allocator.free(metric.name); self.allocator.free(metric.help); self.allocator.destroy(metric); }
         self.counters.deinit(self.allocator);
         self.gauges.deinit(self.allocator);
         self.histograms.deinit(self.allocator);
+        for (self.labeled_counters.items) |entry| {
+            self.allocator.free(entry.name);
+            self.allocator.free(entry.help);
+            entry.destroy_fn(self.allocator, entry.instance);
+        }
+        self.labeled_counters.deinit(self.allocator);
     }
 
     pub fn counter(self: *Registry, name: []const u8, help: []const u8) !*Counter {
         try validateName(name);
-        if (self.findCounter(name) != null or self.findGauge(name) != null or self.findHistogram(name) != null) return error.DuplicateMetric;
+        if (self.findCounter(name) != null or self.findGauge(name) != null or self.findHistogram(name) != null or self.findLabeledCounter(name)) return error.DuplicateMetric;
         const metric = try self.allocator.create(Counter);
         errdefer self.allocator.destroy(metric);
         const owned_name = try self.allocator.dupe(u8, name);
@@ -82,7 +140,7 @@ pub const Registry = struct {
 
     pub fn gauge(self: *Registry, name: []const u8, help: []const u8) !*Gauge {
         try validateName(name);
-        if (self.findGauge(name) != null or self.findCounter(name) != null or self.findHistogram(name) != null) return error.DuplicateMetric;
+        if (self.findGauge(name) != null or self.findCounter(name) != null or self.findHistogram(name) != null or self.findLabeledCounter(name)) return error.DuplicateMetric;
         const metric = try self.allocator.create(Gauge);
         errdefer self.allocator.destroy(metric);
         const owned_name = try self.allocator.dupe(u8, name);
@@ -96,7 +154,7 @@ pub const Registry = struct {
 
     pub fn histogram(self: *Registry, name: []const u8, help: []const u8) !*Histogram {
         try validateName(name);
-        if (self.findCounter(name) != null or self.findGauge(name) != null or self.findHistogram(name) != null) return error.DuplicateMetric;
+        if (self.findCounter(name) != null or self.findGauge(name) != null or self.findHistogram(name) != null or self.findLabeledCounter(name)) return error.DuplicateMetric;
         const metric = try self.allocator.create(Histogram);
         errdefer self.allocator.destroy(metric);
         const owned_name = try self.allocator.dupe(u8, name);
@@ -119,6 +177,11 @@ pub const Registry = struct {
             try appendHelpAndType(self.allocator, &output, metric.name, metric.help, "gauge");
             try appendFmt(self.allocator, &output, "{s} {d}\n", .{ metric.name, metric.get() });
         }
+        for (self.labeled_counters.items) |entry| {
+            try appendHelpAndType(self.allocator, &output, entry.name, entry.help, "counter");
+            try entry.render_fn(self.allocator, &output, entry.name, entry.instance);
+        }
+
         for (self.histograms.items) |metric| {
             try appendHelpAndType(self.allocator, &output, metric.name, metric.help, "histogram");
             var cumulative: u64 = 0;
@@ -145,6 +208,28 @@ fn validateName(name: []const u8) !void {
         const valid = std.ascii.isAlphanumeric(ch) or ch == '_' or ch == ':';
         if (!valid or (index == 0 and std.ascii.isDigit(ch))) return error.InvalidMetricName;
     }
+}
+
+
+fn renderLabeledCounter(comptime Metric: type) *const fn (std.mem.Allocator, *std.ArrayList(u8), []const u8, *anyopaque) anyerror!void {
+    return struct {
+        fn render(allocator: std.mem.Allocator, output: *std.ArrayList(u8), name: []const u8, instance: *anyopaque) anyerror!void {
+            const metric: *Metric = @ptrCast(@alignCast(instance));
+            try appendFmt(allocator, output, "{s}", .{name});
+            try metric.renderLabels(allocator, output);
+            try appendFmt(allocator, output, " {d}\n", .{metric.get()});
+        }
+    }.render;
+}
+
+fn destroyLabeledCounter(comptime Metric: type) *const fn (std.mem.Allocator, *anyopaque) void {
+    return struct {
+        fn destroy(allocator: std.mem.Allocator, instance: *anyopaque) void {
+            const metric: *Metric = @ptrCast(@alignCast(instance));
+            for (metric.label_values) |value| allocator.free(value);
+            allocator.destroy(metric);
+        }
+    }.destroy;
 }
 
 fn appendHelpAndType(allocator: std.mem.Allocator, output: *std.ArrayList(u8), name: []const u8, help: []const u8, kind: []const u8) !void {
@@ -206,4 +291,17 @@ test "help text escapes backslashes and line breaks" {
     _ = try registry.counter("safe_total", "line one\nline two \\ path");
     const rendered = try registry.render(); defer std.testing.allocator.free(rendered);
     try std.testing.expect(std.mem.indexOf(u8, rendered, "# HELP safe_total line one\\nline two \\\\ path\n") != null);
+}
+
+
+test "registry exports comptime labeled counters and rejects duplicate names" {
+    var registry = Registry.init(std.testing.allocator);
+    defer registry.deinit();
+
+    const requests = try registry.labeledCounter(.{"method", "status"}, "http_requests_total", "HTTP requests", .{"POST", "201"});
+    requests.inc();
+    const rendered = try registry.render();
+    defer std.testing.allocator.free(rendered);
+    try std.testing.expect(std.mem.indexOf(u8, rendered, "http_requests_total{method=\"POST\",status=\"201\"} 1\n") != null);
+    try std.testing.expectError(error.DuplicateMetric, registry.counter("http_requests_total", "duplicate"));
 }
