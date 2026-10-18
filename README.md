@@ -78,6 +78,7 @@ For a standalone single-node instance, configure scraping with `-promscrape.conf
 ```sh
 zig build
 zig build test
+zig build bench # ReleaseFast: 1, 4, and 16 threads
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/METRIC-CONVENTIONS.md](docs/METRIC-CONVENTIONS.md).
