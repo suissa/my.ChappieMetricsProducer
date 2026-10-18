@@ -8,7 +8,7 @@ pub const MetricKind = enum {
 pub const Counter = struct {
     name: []const u8,
     help: []const u8,
-    value: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+    value: std.atomic.Value(u64) align(64) = std.atomic.Value(u64).init(0),
 
     pub fn inc(self: *Counter) void {
         _ = self.value.fetchAdd(1, .monotonic);
@@ -26,7 +26,7 @@ pub const Counter = struct {
 pub const Gauge = struct {
     name: []const u8,
     help: []const u8,
-    value: std.atomic.Value(i64) = std.atomic.Value(i64).init(0),
+    value: std.atomic.Value(i64) align(64) = std.atomic.Value(i64).init(0),
 
     pub fn set(self: *Gauge, value: i64) void {
         self.value.store(value, .monotonic);
