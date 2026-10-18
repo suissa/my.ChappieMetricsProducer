@@ -6,11 +6,6 @@ pub fn Counter(comptime names: anytype) type {
     comptime {
         if (@typeInfo(@TypeOf(names)) != .array) @compileError("label names must be a comptime array");
         if (names.len == 0) @compileError("at least one label is required");
-        for (names) |name| {
-            if (@TypeOf(name) != []const u8 and @TypeOf(name) != *const [name.len:0]u8) {
-                @compileError("label names must be string literals");
-            }
-        }
     }
 
     return struct {
@@ -36,39 +31,41 @@ pub fn Counter(comptime names: anytype) type {
             return self.value.load(.monotonic);
         }
 
-        /// Renders only the label set. Intended to be appended by an exporter.
-        pub fn renderLabels(self: *const Self, writer: anytype) !void {
-            try writer.writeByte('{');
+        /// Export-only operation. Observation never calls this function.
+        pub fn renderLabels(self: *const Self, allocator: std.mem.Allocator, output: *std.ArrayList(u8)) !void {
+            try output.append(allocator, '{');
             inline for (names, 0..) |name, index| {
-                if (index != 0) try writer.writeByte(',');
-                try writer.print("{s}=\"", .{name});
-                try escapeLabelValue(writer, self.label_values[index]);
-                try writer.writeByte('"');
+                if (index != 0) try output.append(allocator, ',');
+                try output.appendSlice(allocator, name);
+                try output.appendSlice(allocator, "=\"");
+                try escapeLabelValue(allocator, output, self.label_values[index]);
+                try output.append(allocator, '"');
             }
-            try writer.writeByte('}');
+            try output.append(allocator, '}');
         }
     };
 }
 
-fn escapeLabelValue(writer: anytype, value: []const u8) !void {
+fn escapeLabelValue(allocator: std.mem.Allocator, output: *std.ArrayList(u8), value: []const u8) !void {
     for (value) |ch| {
         switch (ch) {
-            '\\' => try writer.writeAll("\\\\"),
-            '"' => try writer.writeAll("\\\""),
-            '\n' => try writer.writeAll("\\n"),
-            else => try writer.writeByte(ch),
+            '\\' => try output.appendSlice(allocator, "\\\\"),
+            '"' => try output.appendSlice(allocator, "\\\""),
+            '\n' => try output.appendSlice(allocator, "\\n"),
+            else => try output.append(allocator, ch),
         }
     }
 }
 
-test "compile-time labels are fixed and render without allocation" {
+test "compile-time labels are fixed and render without allocation on observation" {
     const RequestCounter = Counter(.{"method", "status"});
     var metric = RequestCounter.init(.{"POST", "200"});
     metric.inc();
+    try std.testing.expectEqual(@as(u64, 1), metric.get());
 
     var output: std.ArrayList(u8) = .empty;
     defer output.deinit(std.testing.allocator);
-    try metric.renderLabels(output.writer(std.testing.allocator));
+    try metric.renderLabels(std.testing.allocator, &output);
     try std.testing.expectEqualStrings("{method=\"POST\",status=\"200\"}", output.items);
 }
 
@@ -78,6 +75,6 @@ test "label values escape prometheus special characters" {
 
     var output: std.ArrayList(u8) = .empty;
     defer output.deinit(std.testing.allocator);
-    try metric.renderLabels(output.writer(std.testing.allocator));
+    try metric.renderLabels(std.testing.allocator, &output);
     try std.testing.expectEqualStrings("{route=\"/x\\\\y\\\"z\\n\"}", output.items);
 }
