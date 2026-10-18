@@ -18,5 +18,7 @@ jobs:
         run: zig build
       - name: Test
         run: zig build test
+      - name: Benchmark (ReleaseFast)
+        run: zig build bench
       - name: Verify formatting
-        run: test -z "$(zig fmt --check build.zig src/root.zig)"
+        run: test -z "$(zig fmt --check build.zig src/root.zig src/labels.zig bench/atomic_counter.zig)"

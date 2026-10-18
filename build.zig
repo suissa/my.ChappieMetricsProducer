@@ -32,5 +32,24 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run metrics library tests");
     test_step.dependOn(&run_tests.step);
 
+    const labels_module = b.createModule(.{
+        .root_source_file = b.path("src/labels.zig"),
+        .target = target,
+        .optimize = .ReleaseFast,
+    });
+    const benchmark_module = b.createModule(.{
+        .root_source_file = b.path("bench/atomic_counter.zig"),
+        .target = target,
+        .optimize = .ReleaseFast,
+    });
+    benchmark_module.addImport("labels", labels_module);
+    const benchmark = b.addExecutable(.{
+        .name = "atomic_counter_bench",
+        .root_module = benchmark_module,
+    });
+    const run_benchmark = b.addRunArtifact(benchmark);
+    const benchmark_step = b.step("bench", "Run ReleaseFast atomic counter contention benchmark");
+    benchmark_step.dependOn(&run_benchmark.step);
+
     _ = module;
 }
