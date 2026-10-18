@@ -6,7 +6,7 @@ The library owns metric definitions and Prometheus exposition. VictoriaMetrics i
 
 ## Status
 
-Core foundation with atomic counters, gauges, and fixed-memory histograms; Prometheus text exposition; tests; and a VictoriaMetrics scrape example. An HTTP server adapter remains the responsibility of the embedding application.
+Core foundation with atomic counters, gauges, fixed-memory histograms, and compile-time bounded labels; Prometheus text exposition; tests; and a VictoriaMetrics scrape example. An HTTP server adapter remains the responsibility of the embedding application.
 
 ## Requirements
 
@@ -43,10 +43,22 @@ latency.observe(12);
 
 Histograms use 65 fixed atomic buckets with logarithmic upper bounds (1, 2, 4, …, 2^63, +Inf). Observation is O(1), performs no allocation, and does not search the registry. Bucket counts are cumulative only during export. This representation is intended for non-negative integer measurements; use milliseconds or microseconds as integer units.
 
+## Compile-time bounded labels
+
+Labels are deliberately separate from the registry lookup path. The label names are encoded in the generated type, the number of dimensions is fixed at compile time, and `inc`, `add`, and `get` perform no allocation or name lookup.
+
+```zig
+const RequestCounter = metrics.labels.Counter(.{"method", "status"});
+var requests = RequestCounter.init(.{"POST", "200"});
+requests.inc();
+```
+
+`renderLabels` exists only for export. Do not create label values from unbounded user input. Never use user ID, phone, email, session ID, prompt, raw intent, URL, or exception text as a label.
+
 ## Design contract
 
 - Metric names use Prometheus conventions; counters end in `_total`.
-- Use bounded, low-cardinality labels when label support is added. Never label by user ID, phone, session ID, prompt, raw intent, or other PII/high-cardinality values.
+- Labels have bounded cardinality and fixed dimensionality.
 - Do not put secrets, message bodies, or user payloads into metrics.
 - Metric collection must not perform network I/O. Export is an adapter concern.
 - VictoriaMetrics scrapes the producer; the producer does not write directly to VictoriaMetrics.
