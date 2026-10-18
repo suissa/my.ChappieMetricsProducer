@@ -19,4 +19,4 @@ jobs:
       - name: Test
         run: zig build test
       - name: Verify formatting
-        run: test -z "$(zig fmt --check build.zig src/root.zig)"
+        run: test -z "$(zig fmt --check build.zig src/root.zig src/labels.zig)"
