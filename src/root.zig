@@ -70,6 +70,18 @@ pub const Registry = struct {
         for (self.counters.items) |metric| { self.allocator.free(metric.name); self.allocator.free(metric.help); self.allocator.destroy(metric); }
         for (self.gauges.items) |metric| { self.allocator.free(metric.name); self.allocator.free(metric.help); self.allocator.destroy(metric); }
 
+        for (self.histograms.items) |metric| { self.allocator.free(metric.name); self.allocator.free(metric.help); self.allocator.destroy(metric); }
+        self.counters.deinit(self.allocator);
+        self.gauges.deinit(self.allocator);
+        self.histograms.deinit(self.allocator);
+        for (self.labeled_counters.items) |entry| {
+            self.allocator.free(entry.name);
+            self.allocator.free(entry.help);
+            entry.destroy_fn(self.allocator, entry.instance);
+        }
+        self.labeled_counters.deinit(self.allocator);
+    }
+
     /// Registers a compile-time-shaped counter. Label dimensions are fixed by
     /// the type; updates use atomics and never perform registry lookups.
     pub fn labeledCounter(
@@ -119,17 +131,6 @@ pub const Registry = struct {
         return false;
     }
 
-        for (self.histograms.items) |metric| { self.allocator.free(metric.name); self.allocator.free(metric.help); self.allocator.destroy(metric); }
-        self.counters.deinit(self.allocator);
-        self.gauges.deinit(self.allocator);
-        self.histograms.deinit(self.allocator);
-        for (self.labeled_counters.items) |entry| {
-            self.allocator.free(entry.name);
-            self.allocator.free(entry.help);
-            entry.destroy_fn(self.allocator, entry.instance);
-        }
-        self.labeled_counters.deinit(self.allocator);
-    }
 
     pub fn counter(self: *Registry, name: []const u8, help: []const u8) !*Counter {
         try validateName(name);
