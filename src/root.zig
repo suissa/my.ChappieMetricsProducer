@@ -1,5 +1,7 @@
 const std = @import("std");
 
+pub const labels = @import("labels.zig");
+
 pub const MetricKind = enum {
     counter,
     gauge,
@@ -11,17 +13,9 @@ pub const Counter = struct {
     help: []const u8,
     value: std.atomic.Value(u64) align(64) = std.atomic.Value(u64).init(0),
 
-    pub fn inc(self: *Counter) void {
-        _ = self.value.fetchAdd(1, .monotonic);
-    }
-
-    pub fn add(self: *Counter, amount: u64) void {
-        _ = self.value.fetchAdd(amount, .monotonic);
-    }
-
-    pub fn get(self: *const Counter) u64 {
-        return self.value.load(.monotonic);
-    }
+    pub fn inc(self: *Counter) void { _ = self.value.fetchAdd(1, .monotonic); }
+    pub fn add(self: *Counter, amount: u64) void { _ = self.value.fetchAdd(amount, .monotonic); }
+    pub fn get(self: *const Counter) u64 { return self.value.load(.monotonic); }
 };
 
 pub const Gauge = struct {
@@ -29,27 +23,12 @@ pub const Gauge = struct {
     help: []const u8,
     value: std.atomic.Value(i64) align(64) = std.atomic.Value(i64).init(0),
 
-    pub fn set(self: *Gauge, value: i64) void {
-        self.value.store(value, .monotonic);
-    }
-
-    pub fn inc(self: *Gauge) void {
-        _ = self.value.fetchAdd(1, .monotonic);
-    }
-
-    pub fn dec(self: *Gauge) void {
-        _ = self.value.fetchSub(1, .monotonic);
-    }
-
-    pub fn add(self: *Gauge, amount: i64) void {
-        _ = self.value.fetchAdd(amount, .monotonic);
-    }
-
-    pub fn get(self: *const Gauge) i64 {
-        return self.value.load(.monotonic);
-    }
+    pub fn set(self: *Gauge, value: i64) void { self.value.store(value, .monotonic); }
+    pub fn inc(self: *Gauge) void { _ = self.value.fetchAdd(1, .monotonic); }
+    pub fn dec(self: *Gauge) void { _ = self.value.fetchSub(1, .monotonic); }
+    pub fn add(self: *Gauge, amount: i64) void { _ = self.value.fetchAdd(amount, .monotonic); }
+    pub fn get(self: *const Gauge) i64 { return self.value.load(.monotonic); }
 };
-
 
 /// Fixed-memory histogram with logarithmic upper bounds (1, 2, 4, ... 2^63, +Inf).
 /// Observation is O(1), allocation-free, and lock-free after registration.
@@ -66,14 +45,8 @@ pub const Histogram = struct {
         _ = self.count.fetchAdd(1, .monotonic);
         _ = self.sum.fetchAdd(value, .monotonic);
     }
-
-    pub fn getCount(self: *const Histogram) u64 {
-        return self.count.load(.monotonic);
-    }
-
-    pub fn getSum(self: *const Histogram) u64 {
-        return self.sum.load(.monotonic);
-    }
+    pub fn getCount(self: *const Histogram) u64 { return self.count.load(.monotonic); }
+    pub fn getSum(self: *const Histogram) u64 { return self.sum.load(.monotonic); }
 };
 
 pub const Registry = struct {
@@ -82,28 +55,14 @@ pub const Registry = struct {
     gauges: std.ArrayList(*Gauge) = .empty,
     histograms: std.ArrayList(*Histogram) = .empty,
 
-    pub fn init(allocator: std.mem.Allocator) Registry {
-        return .{ .allocator = allocator };
-    }
+    pub fn init(allocator: std.mem.Allocator) Registry { return .{ .allocator = allocator }; }
 
     pub fn deinit(self: *Registry) void {
-        for (self.counters.items) |metric| {
-            self.allocator.free(metric.name);
-            self.allocator.free(metric.help);
-            self.allocator.destroy(metric);
-        }
-        for (self.gauges.items) |metric| {
-            self.allocator.free(metric.name);
-            self.allocator.free(metric.help);
-            self.allocator.destroy(metric);
-        }
+        for (self.counters.items) |metric| { self.allocator.free(metric.name); self.allocator.free(metric.help); self.allocator.destroy(metric); }
+        for (self.gauges.items) |metric| { self.allocator.free(metric.name); self.allocator.free(metric.help); self.allocator.destroy(metric); }
+        for (self.histograms.items) |metric| { self.allocator.free(metric.name); self.allocator.free(metric.help); self.allocator.destroy(metric); }
         self.counters.deinit(self.allocator);
         self.gauges.deinit(self.allocator);
-        for (self.histograms.items) |metric| {
-            self.allocator.free(metric.name);
-            self.allocator.free(metric.help);
-            self.allocator.destroy(metric);
-        }
         self.histograms.deinit(self.allocator);
     }
 
@@ -135,7 +94,6 @@ pub const Registry = struct {
         return metric;
     }
 
-
     pub fn histogram(self: *Registry, name: []const u8, help: []const u8) !*Histogram {
         try validateName(name);
         if (self.findCounter(name) != null or self.findGauge(name) != null or self.findHistogram(name) != null) return error.DuplicateMetric;
@@ -161,7 +119,6 @@ pub const Registry = struct {
             try appendHelpAndType(self.allocator, &output, metric.name, metric.help, "gauge");
             try appendFmt(self.allocator, &output, "{s} {d}\n", .{ metric.name, metric.get() });
         }
-
         for (self.histograms.items) |metric| {
             try appendHelpAndType(self.allocator, &output, metric.name, metric.help, "histogram");
             var cumulative: u64 = 0;
@@ -177,26 +134,9 @@ pub const Registry = struct {
         return output.toOwnedSlice(self.allocator);
     }
 
-    fn findCounter(self: *const Registry, name: []const u8) ?*Counter {
-        for (self.counters.items) |metric| {
-            if (std.mem.eql(u8, metric.name, name)) return metric;
-        }
-        return null;
-    }
-
-    fn findHistogram(self: *const Registry, name: []const u8) ?*Histogram {
-        for (self.histograms.items) |metric| {
-            if (std.mem.eql(u8, metric.name, name)) return metric;
-        }
-        return null;
-    }
-
-    fn findGauge(self: *const Registry, name: []const u8) ?*Gauge {
-        for (self.gauges.items) |metric| {
-            if (std.mem.eql(u8, metric.name, name)) return metric;
-        }
-        return null;
-    }
+    fn findCounter(self: *const Registry, name: []const u8) ?*Counter { for (self.counters.items) |metric| if (std.mem.eql(u8, metric.name, name)) return metric; return null; }
+    fn findHistogram(self: *const Registry, name: []const u8) ?*Histogram { for (self.histograms.items) |metric| if (std.mem.eql(u8, metric.name, name)) return metric; return null; }
+    fn findGauge(self: *const Registry, name: []const u8) ?*Gauge { for (self.gauges.items) |metric| if (std.mem.eql(u8, metric.name, name)) return metric; return null; }
 };
 
 fn validateName(name: []const u8) !void {
@@ -207,110 +147,63 @@ fn validateName(name: []const u8) !void {
     }
 }
 
-fn appendHelpAndType(
-    allocator: std.mem.Allocator,
-    output: *std.ArrayList(u8),
-    name: []const u8,
-    help: []const u8,
-    kind: []const u8,
-) !void {
+fn appendHelpAndType(allocator: std.mem.Allocator, output: *std.ArrayList(u8), name: []const u8, help: []const u8, kind: []const u8) !void {
     try appendFmt(allocator, output, "# HELP {s} ", .{name});
-    for (help) |ch| {
-        switch (ch) {
-            '\\' => try output.appendSlice(allocator, "\\\\"),
-            '\n' => try output.appendSlice(allocator, "\\n"),
-            else => try output.append(allocator, ch),
-        }
-    }
+    for (help) |ch| switch (ch) { '\\' => try output.appendSlice(allocator, "\\\\"), '\n' => try output.appendSlice(allocator, "\\n"), else => try output.append(allocator, ch) };
     try appendFmt(allocator, output, "\n# TYPE {s} {s}\n", .{ name, kind });
 }
-fn appendFmt(
-    allocator: std.mem.Allocator,
-    output: *std.ArrayList(u8),
-    comptime format: []const u8,
-    args: anytype,
-) !void {
+
+fn appendFmt(allocator: std.mem.Allocator, output: *std.ArrayList(u8), comptime format: []const u8, args: anytype) !void {
     const chunk = try std.fmt.allocPrint(allocator, format, args);
     defer allocator.free(chunk);
     try output.appendSlice(allocator, chunk);
 }
 
 test "counter renders Prometheus exposition" {
-    var registry = Registry.init(std.testing.allocator);
-    defer registry.deinit();
-
+    var registry = Registry.init(std.testing.allocator); defer registry.deinit();
     const requests = try registry.counter("chappie_requests_total", "Total handled requests");
-    requests.inc();
-    requests.add(2);
-
-    const rendered = try registry.render();
-    defer std.testing.allocator.free(rendered);
-    try std.testing.expectEqualStrings(
-        "# HELP chappie_requests_total Total handled requests\n# TYPE chappie_requests_total counter\nchappie_requests_total 3\n",
-        rendered,
-    );
+    requests.inc(); requests.add(2);
+    const rendered = try registry.render(); defer std.testing.allocator.free(rendered);
+    try std.testing.expectEqualStrings("# HELP chappie_requests_total Total handled requests\n# TYPE chappie_requests_total counter\nchappie_requests_total 3\n", rendered);
 }
 
 test "gauge supports setting and decrementing" {
-    var registry = Registry.init(std.testing.allocator);
-    defer registry.deinit();
-
+    var registry = Registry.init(std.testing.allocator); defer registry.deinit();
     const active = try registry.gauge("chappie_active_sessions", "Current active sessions");
-    active.set(4);
-    active.dec();
-
+    active.set(4); active.dec();
     try std.testing.expectEqual(@as(i64, 3), active.get());
 }
 
 test "rejects invalid names and duplicate metric names" {
-    var registry = Registry.init(std.testing.allocator);
-    defer registry.deinit();
-
+    var registry = Registry.init(std.testing.allocator); defer registry.deinit();
     try std.testing.expectError(error.InvalidMetricName, registry.counter("1bad", "invalid"));
+    try std.testing.expectError(error.InvalidMetricName, registry.counter("", "empty"));
     _ = try registry.counter("requests_total", "Requests");
     try std.testing.expectError(error.DuplicateMetric, registry.counter("requests_total", "Duplicate"));
     try std.testing.expectError(error.DuplicateMetric, registry.gauge("requests_total", "Duplicate"));
 }
 
 test "histogram records observations and exports cumulative buckets" {
-    var registry = Registry.init(std.testing.allocator);
-    defer registry.deinit();
-
+    var registry = Registry.init(std.testing.allocator); defer registry.deinit();
     const latency = try registry.histogram("chappie_latency_ms", "Request latency in milliseconds");
-    latency.observe(1);
-    latency.observe(2);
-    latency.observe(5);
-
+    latency.observe(1); latency.observe(2); latency.observe(5);
     try std.testing.expectEqual(@as(u64, 3), latency.getCount());
     try std.testing.expectEqual(@as(u64, 8), latency.getSum());
-
-    const rendered = try registry.render();
-    defer std.testing.allocator.free(rendered);
+    const rendered = try registry.render(); defer std.testing.allocator.free(rendered);
     try std.testing.expect(std.mem.indexOf(u8, rendered, "chappie_latency_ms_bucket{le=\"1\"} 1\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, rendered, "chappie_latency_ms_bucket{le=\"2\"} 2\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, rendered, "chappie_latency_ms_bucket{le=\"+Inf\"} 3\n") != null);
 }
 
 test "histogram name cannot collide with another metric kind" {
-    var registry = Registry.init(std.testing.allocator);
-    defer registry.deinit();
+    var registry = Registry.init(std.testing.allocator); defer registry.deinit();
     _ = try registry.counter("requests_total", "Requests");
     try std.testing.expectError(error.DuplicateMetric, registry.histogram("requests_total", "Collision"));
 }
 
-
 test "help text escapes backslashes and line breaks" {
-    var registry = Registry.init(std.testing.allocator);
-    defer registry.deinit();
-
+    var registry = Registry.init(std.testing.allocator); defer registry.deinit();
     _ = try registry.counter("safe_total", "line one\nline two \\ path");
-    const rendered = try registry.render();
-    defer std.testing.allocator.free(rendered);
+    const rendered = try registry.render(); defer std.testing.allocator.free(rendered);
     try std.testing.expect(std.mem.indexOf(u8, rendered, "# HELP safe_total line one\\nline two \\\\ path\n") != null);
-}
-
-test "rejects empty metric names" {
-    var registry = Registry.init(std.testing.allocator);
-    defer registry.deinit();
-    try std.testing.expectError(error.InvalidMetricName, registry.counter("", "empty"));
 }
