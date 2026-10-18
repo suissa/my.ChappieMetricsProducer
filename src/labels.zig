@@ -4,7 +4,6 @@ const std = @import("std");
 /// number of dimensions is fixed and there is no per-observation allocation.
 pub fn Counter(comptime names: anytype) type {
     comptime {
-        if (@typeInfo(@TypeOf(names)) != .array) @compileError("label names must be a comptime array");
         if (names.len == 0) @compileError("at least one label is required");
     }
 
