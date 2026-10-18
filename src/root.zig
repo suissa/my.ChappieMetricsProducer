@@ -75,10 +75,12 @@ pub const Histogram = struct {
         return self.sum.load(.monotonic);
     }
 };
-\npub const Registry = struct {
+
+pub const Registry = struct {
     allocator: std.mem.Allocator,
     counters: std.ArrayList(*Counter) = .empty,
-    gauges: std.ArrayList(*Gauge) = .empty,\n    histograms: std.ArrayList(*Histogram) = .empty,
+    gauges: std.ArrayList(*Gauge) = .empty,
+    histograms: std.ArrayList(*Histogram) = .empty,
 
     pub fn init(allocator: std.mem.Allocator) Registry {
         return .{ .allocator = allocator };
@@ -96,7 +98,10 @@ pub const Histogram = struct {
             self.allocator.destroy(metric);
         }
         self.counters.deinit(self.allocator);
-        self.gauges.deinit(self.allocator);\n        for (self.histograms.items) |metric| {\n            self.allocator.free(metric.name);\n            self.allocator.free(metric.help);\n            self.allocator.destroy(metric);\n        }\n        self.histograms.deinit(self.allocator);
+        self.gauges.deinit(self.allocator);
+        for (self.histograms.items) |metric| {
+            self.allocator.free(metric.name);\n            self.allocator.free(metric.help);\n            self.allocator.destroy(metric);\n        }
+        self.histograms.deinit(self.allocator);
     }
 
     pub fn counter(self: *Registry, name: []const u8, help: []const u8) !*Counter {
@@ -160,11 +165,11 @@ pub const Histogram = struct {
             for (0..64) |index| {
                 cumulative += metric.buckets[index].load(.monotonic);
                 const upper_bound = @as(u64, 1) << @intCast(index);
-                try appendFmt(self.allocator, &output, "{s}_bucket{{le=\"{d}\"}} {d}\\n", .{ metric.name, upper_bound, cumulative });
+                try appendFmt(self.allocator, &output, "{s}_bucket{{le=\"{d}\"}} {d}\n", .{ metric.name, upper_bound, cumulative });
             }
             cumulative += metric.buckets[64].load(.monotonic);
             try appendFmt(self.allocator, &output, "{s}_bucket{{le=\"+Inf\"}} {d}\\n", .{ metric.name, cumulative });
-            try appendFmt(self.allocator, &output, "{s}_sum {d}\\n{s}_count {d}\\n", .{ metric.name, metric.getSum(), metric.name, metric.getCount() });
+            try appendFmt(self.allocator, &output, "{s}_sum {d}\n{s}_count {d}\\n", .{ metric.name, metric.getSum(), metric.name, metric.getCount() });
         }
         return output.toOwnedSlice(self.allocator);
     }
@@ -176,7 +181,13 @@ pub const Histogram = struct {
         return null;
     }
 
-    fn findHistogram(self: *const Registry, name: []const u8) ?*Histogram {\n        for (self.histograms.items) |metric| {\n            if (std.mem.eql(u8, metric.name, name)) return metric;\n        }\n        return null;\n    }\n\n    fn findGauge(self: *const Registry, name: []const u8) ?*Gauge {
+    fn findHistogram(self: *const Registry, name: []const u8) ?*Histogram {
+        for (self.histograms.items) |metric| {
+            if (std.mem.eql(u8, metric.name, name)) return metric;\n        }
+        return null;
+    }
+
+    fn findGauge(self: *const Registry, name: []const u8) ?*Gauge {
         for (self.gauges.items) |metric| {
             if (std.mem.eql(u8, metric.name, name)) return metric;
         }
