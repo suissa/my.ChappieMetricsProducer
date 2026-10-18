@@ -1,5 +1,5 @@
 const std = @import("std");
-const labels = @import("../src/labels.zig");
+const labels = @import("labels");
 
 const BenchCounter = labels.Counter(.{"worker"});
 const iterations_per_thread: u64 = 1_000_000;
