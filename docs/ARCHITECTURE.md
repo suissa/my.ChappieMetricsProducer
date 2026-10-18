@@ -26,6 +26,7 @@ The core deliberately does not open sockets, create background threads, or send 
 ## Initial API
 
 - `Registry.counter(name, help)`: register a monotonically increasing counter.
+- `Registry.labeledCounter(names, name, help, values)`: register a counter with compile-time-fixed label dimensions. Label values are copied and owned by the registry; increments remain atomic and do not search the registry.
 - `Registry.gauge(name, help)`: register a value that can increase or decrease.
 - `Registry.histogram(name, help)`: register a fixed-memory integer histogram; `observe(value)` uses atomic operations and no allocation.
 - `Registry.render()`: allocate a Prometheus exposition payload; caller owns and frees the returned slice.
