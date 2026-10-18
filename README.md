@@ -34,7 +34,16 @@ pub fn main() !void {
 }
 ```
 
-## Histogram\n\n```zig\nconst latency = try registry.histogram("chappie_latency_ms", "Request latency in milliseconds");\nlatency.observe(12);\n```\n\nHistograms use 65 fixed atomic buckets with logarithmic upper bounds (1, 2, 4, …, 2^63, +Inf). Observation is O(1), performs no allocation, and does not search the registry. Bucket counts are cumulative only during export. This representation is intended for non-negative integer measurements; use milliseconds or microseconds as integer units.\n\n## Design contract
+## Histogram
+
+```zig
+const latency = try registry.histogram("chappie_latency_ms", "Request latency in milliseconds");
+latency.observe(12);
+```
+
+Histograms use 65 fixed atomic buckets with logarithmic upper bounds (1, 2, 4, …, 2^63, +Inf). Observation is O(1), performs no allocation, and does not search the registry. Bucket counts are cumulative only during export. This representation is intended for non-negative integer measurements; use milliseconds or microseconds as integer units.
+
+## Design contract
 
 - Metric names use Prometheus conventions; counters end in `_total`.
 - Use bounded, low-cardinality labels when label support is added. Never label by user ID, phone, session ID, prompt, raw intent, or other PII/high-cardinality values.
