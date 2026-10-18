@@ -26,13 +26,14 @@ The core deliberately does not open sockets, create background threads, or send 
 ## Initial API
 
 - `Registry.counter(name, help)`: register a monotonically increasing counter.
-- `Registry.gauge(name, help)`: register a value that can increase or decrease.\n- `Registry.histogram(name, help)`: register a fixed-memory integer histogram; `observe(value)` uses atomic operations and no allocation.
+- `Registry.gauge(name, help)`: register a value that can increase or decrease.
+- `Registry.histogram(name, help)`: register a fixed-memory integer histogram; `observe(value)` uses atomic operations and no allocation.
 - `Registry.render()`: allocate a Prometheus exposition payload; caller owns and frees the returned slice.
 - Duplicate metric names and invalid names are rejected.
 
 ## Explicit limitations
 
-This foundation does not yet provide labels, summaries, exemplars, an HTTP server, push delivery, or a VictoriaMetrics client. Histogram buckets are fixed logarithmic bounds for non-negative integer observations, not configurable floating-point boundaries. Do not treat these as implemented. Histograms and bounded labels should be designed with cardinality and allocation costs in mind before adding them.
+This foundation does not yet provide labels, summaries, exemplars, an HTTP server, push delivery, or a VictoriaMetrics client. Histogram buckets are fixed logarithmic bounds for non-negative integer observations, not configurable floating-point boundaries. Labels should be designed with cardinality and allocation costs in mind before adding them.
 
 ## Reliability and privacy
 
