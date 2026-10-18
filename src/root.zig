@@ -85,7 +85,11 @@ pub const Registry = struct {
         errdefer self.allocator.destroy(metric);
         metric.* = Metric.init(values);
         var copied_values: usize = 0;
-        errdefer for (metric.label_values[0..copied_values]) |value| self.allocator.free(value);
+        errdefer {
+            for (metric.label_values[0..copied_values]) |value| {
+                self.allocator.free(value);
+            }
+        }
         for (values, 0..) |value, index| {
             const owned = try self.allocator.dupe(u8, value);
             metric.label_values[index] = owned;
