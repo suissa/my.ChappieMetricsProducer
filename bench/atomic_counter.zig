@@ -9,17 +9,17 @@ fn incrementMany(counter: *BenchCounter, iterations: u64) void {
     while (i < iterations) : (i += 1) counter.inc();
 }
 
-fn runCase(thread_count: usize) !void {
+fn runCase(io: std.Io, thread_count: usize) !void {
     var counter = BenchCounter.init(.{"benchmark"});
     var threads: [16]std.Thread = undefined;
-    var timer = try std.time.Timer.start();
+    const started = std.Io.Clock.awake.now(io);
 
     for (threads[0..thread_count]) |*thread| {
         thread.* = try std.Thread.spawn(.{}, incrementMany, .{ &counter, iterations_per_thread });
     }
     for (threads[0..thread_count]) |*thread| thread.join();
 
-    const elapsed_ns = timer.read();
+    const elapsed_ns = started.untilNow(io, .awake).toNanoseconds();
     const operations = iterations_per_thread * @as(u64, @intCast(thread_count));
     const ops_per_second = if (elapsed_ns == 0) 0 else @as(u64, @intCast((@as(u128, operations) * std.time.ns_per_s) / elapsed_ns));
 
@@ -32,8 +32,8 @@ fn runCase(thread_count: usize) !void {
     });
 }
 
-pub fn main() !void {
-    try runCase(1);
-    try runCase(4);
-    try runCase(16);
+pub fn main(init: std.process.Init) !void {
+    try runCase(init.io, 1);
+    try runCase(init.io, 4);
+    try runCase(init.io, 16);
 }
