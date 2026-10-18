@@ -59,22 +59,30 @@ pub const Registry = struct {
     }
 
     pub fn deinit(self: *Registry) void {
-        for (self.counters.items) |metric| self.allocator.destroy(metric);
-        for (self.gauges.items) |metric| self.allocator.destroy(metric);
+        for (self.counters.items) |metric| {
+            self.allocator.free(metric.name);
+            self.allocator.free(metric.help);
+            self.allocator.destroy(metric);
+        }
+        for (self.gauges.items) |metric| {
+            self.allocator.free(metric.name);
+            self.allocator.free(metric.help);
+            self.allocator.destroy(metric);
+        }
         self.counters.deinit(self.allocator);
         self.gauges.deinit(self.allocator);
     }
 
     pub fn counter(self: *Registry, name: []const u8, help: []const u8) !*Counter {
         try validateName(name);
-        if (self.findCounter(name)) |existing| return error.DuplicateMetric;
+        if (self.findCounter(name) != null or self.findGauge(name) != null) return error.DuplicateMetric;
         const metric = try self.allocator.create(Counter);
-        metric.* = .{ .name = try self.allocator.dupe(u8, name), .help = try self.allocator.dupe(u8, help) };
-        errdefer {
-            self.allocator.free(metric.name);
-            self.allocator.free(metric.help);
-            self.allocator.destroy(metric);
-        }
+        errdefer self.allocator.destroy(metric);
+        const owned_name = try self.allocator.dupe(u8, name);
+        errdefer self.allocator.free(owned_name);
+        const owned_help = try self.allocator.dupe(u8, help);
+        errdefer self.allocator.free(owned_help);
+        metric.* = .{ .name = owned_name, .help = owned_help };
         try self.counters.append(self.allocator, metric);
         return metric;
     }
@@ -83,12 +91,12 @@ pub const Registry = struct {
         try validateName(name);
         if (self.findGauge(name) != null or self.findCounter(name) != null) return error.DuplicateMetric;
         const metric = try self.allocator.create(Gauge);
-        metric.* = .{ .name = try self.allocator.dupe(u8, name), .help = try self.allocator.dupe(u8, help) };
-        errdefer {
-            self.allocator.free(metric.name);
-            self.allocator.free(metric.help);
-            self.allocator.destroy(metric);
-        }
+        errdefer self.allocator.destroy(metric);
+        const owned_name = try self.allocator.dupe(u8, name);
+        errdefer self.allocator.free(owned_name);
+        const owned_help = try self.allocator.dupe(u8, help);
+        errdefer self.allocator.free(owned_help);
+        metric.* = .{ .name = owned_name, .help = owned_help };
         try self.gauges.append(self.allocator, metric);
         return metric;
     }
