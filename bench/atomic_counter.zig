@@ -20,7 +20,7 @@ fn runCase(thread_count: usize) !void {
     for (threads[0..thread_count]) |*thread| thread.join();
 
     const elapsed_ns = timer.read();
-    const operations = iterations_per_thread * thread_count;
+    const operations = iterations_per_thread * @as(u64, @intCast(thread_count));
     const ops_per_second = if (elapsed_ns == 0) 0 else @as(u64, @intCast((@as(u128, operations) * std.time.ns_per_s) / elapsed_ns));
 
     std.debug.print("threads={d} operations={d} elapsed_ms={d} ops_per_second={d} final={d}\n", .{
