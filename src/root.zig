@@ -84,11 +84,13 @@ pub const Registry = struct {
         const metric = try self.allocator.create(Metric);
         errdefer self.allocator.destroy(metric);
         metric.* = Metric.init(values);
+        var copied_values: usize = 0;
+        errdefer for (metric.label_values[0..copied_values]) |value| self.allocator.free(value);
         for (values, 0..) |value, index| {
             const owned = try self.allocator.dupe(u8, value);
             metric.label_values[index] = owned;
+            copied_values += 1;
         }
-        errdefer for (metric.label_values) |value| self.allocator.free(value);
 
         const owned_name = try self.allocator.dupe(u8, name);
         errdefer self.allocator.free(owned_name);
